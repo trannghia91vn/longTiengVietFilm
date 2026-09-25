@@ -1,0 +1,13 @@
+node_modules
+dist
+target
+src-tauri/target
+.DS_Store
+*.log
+.env
+src-tauri/engines/ffmpeg
+src-tauri/engines/ffprobe
+src-tauri/engines/whisper-cli
+src-tauri/engines/llama-cli
+src-tauri/engines/llama-server
+src-tauri/engines/*.dylib
