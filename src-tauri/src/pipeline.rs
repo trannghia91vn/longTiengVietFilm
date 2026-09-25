@@ -2150,19 +2150,81 @@ fn emit_dub_progress(
     );
 }
 
-fn speech_text(text: &str) -> String {
+pub(crate) fn speech_text(text: &str) -> String {
     let mut clean = String::new();
-    let mut inside_tag = false;
-    for character in text.chars() {
+    let mut characters = text.chars().peekable();
+    while let Some(character) = characters.next() {
         match character {
-            '<' => inside_tag = true,
-            '>' => inside_tag = false,
-            '\n' | '\r' if !inside_tag => clean.push(' '),
-            _ if !inside_tag => clean.push(character),
-            _ => {}
+            '<' => {
+                let mut tag = String::new();
+                let mut closed = false;
+                for value in characters.by_ref() {
+                    if value == '>' {
+                        closed = true;
+                        break;
+                    }
+                    tag.push(value);
+                }
+                let name = tag
+                    .trim()
+                    .trim_start_matches('/')
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .trim_end_matches('/')
+                    .to_ascii_lowercase();
+                let is_markup = closed
+                    && matches!(
+                        name.as_str(),
+                        "i" | "b"
+                            | "u"
+                            | "s"
+                            | "em"
+                            | "strong"
+                            | "font"
+                            | "span"
+                            | "br"
+                            | "p"
+                            | "div"
+                            | "ruby"
+                            | "rt"
+                            | "c"
+                            | "v"
+                    );
+                if is_markup {
+                    if clean.ends_with('\\') {
+                        clean.pop();
+                    }
+                    if matches!(name.as_str(), "br" | "p" | "div") {
+                        clean.push(' ');
+                    }
+                } else {
+                    clean.push('<');
+                    clean.push_str(&tag);
+                    if closed {
+                        clean.push('>');
+                    }
+                }
+            }
+            '{' if characters.peek() == Some(&'\\') => {
+                for value in characters.by_ref() {
+                    if value == '}' {
+                        break;
+                    }
+                }
+            }
+            '\n' | '\r' => clean.push(' '),
+            _ => clean.push(character),
         }
     }
-    clean.split_whitespace().collect::<Vec<_>>().join(" ")
+    clean
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 async fn media_duration_seconds(app: &AppHandle, path: &Path) -> Result<f64, String> {
@@ -2416,6 +2478,13 @@ mod tests {
             speech_text("<i>Xin chào</i>\nViệt Nam"),
             "Xin chào Việt Nam"
         );
+        assert_eq!(speech_text("\\<i> tui là ai \\</i>"), "tui là ai");
+        assert_eq!(
+            speech_text("<b>Một</b><br><u>hai</u> <font color=\"red\">ba</font>"),
+            "Một hai ba"
+        );
+        assert_eq!(speech_text("{\\an8}{\\i1}Xin chào{\\i0}"), "Xin chào");
+        assert_eq!(speech_text("Một < 2 và 3 > 0"), "Một < 2 và 3 > 0");
     }
 
     use super::*;

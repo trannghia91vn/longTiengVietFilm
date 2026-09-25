@@ -1210,10 +1210,11 @@ pub async fn translate(app: &AppHandle, project_id: &str) -> Result<DubbingProje
 }
 
 fn raw_audio_cache_key(text: &str, voice: &str) -> String {
+    let spoken_text = pipeline::speech_text(text);
     let mut digest = Sha256::new();
     digest.update(b"vieneu-v3-turbo-q8-sea-g2p-raw-v2");
     digest.update([0]);
-    digest.update(text.trim().as_bytes());
+    digest.update(spoken_text.as_bytes());
     digest.update([0]);
     digest.update(voice.as_bytes());
     digest.update([0]);
@@ -1439,6 +1440,7 @@ struct TtsTask {
     target_duration_ms: i64,
     speed: f64,
     volume: f64,
+    had_markup: bool,
 }
 
 #[derive(Deserialize)]
@@ -1674,6 +1676,19 @@ fn make_tts_tasks(
             if cue.start_ms < 0 || cue.end_ms <= cue.start_ms {
                 return Err(format!("Cue {} có timestamp không hợp lệ.", cue.index));
             }
+            let speech_text = pipeline::speech_text(&cue.translated_text);
+            if speech_text.is_empty() {
+                return Err(format!(
+                    "Cue {} không còn nội dung đọc sau khi bỏ tag phụ đề.",
+                    cue.index
+                ));
+            }
+            let had_markup = speech_text
+                != cue
+                    .translated_text
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ");
             let voice = speaker_voice
                 .get(cue.speaker_id.as_str())
                 .ok_or_else(|| format!("Cue {} tham chiếu nhân vật không tồn tại.", cue.index))?
@@ -1681,12 +1696,12 @@ fn make_tts_tasks(
             if voice.trim().is_empty() {
                 return Err(format!("Cue {} chưa được gán voice preset.", cue.index));
             }
-            let raw_key = raw_audio_cache_key(&cue.translated_text, &voice);
+            let raw_key = raw_audio_cache_key(&speech_text, &voice);
             let processed_key = processed_audio_cache_key(&raw_key, cue, &project.audio_settings);
             Ok(TtsTask {
                 cue_id: cue.id.clone(),
                 cue_index: cue.index,
-                text: cue.translated_text.trim().to_string(),
+                text: speech_text,
                 voice,
                 raw_path: raw_cache.join(format!("{raw_key}.wav")),
                 processed_path: processed_cache.join(format!("{processed_key}.wav")),
@@ -1694,6 +1709,7 @@ fn make_tts_tasks(
                 target_duration_ms: cue.end_ms - cue.start_ms,
                 speed: cue.speed,
                 volume: cue.volume,
+                had_markup,
             })
         })
         .collect()
@@ -2002,7 +2018,7 @@ pub async fn synthesize(
         for task in tasks {
             let existing = project.cues.iter().find(|cue| cue.id == task.cue_id)
                 .and_then(|cue| cue.audio_path.as_deref()).map(PathBuf::from)
-                .filter(|path| valid_wav(path));
+                .filter(|path| (!task.had_markup || path == &task.processed_path) && valid_wav(path));
             let cached = valid_wav(&task.processed_path).then_some(task.processed_path.clone());
             if let Some(path) = existing.or(cached) {
                 let duration = wav_duration_ms(&path).map_err(|error| job_error("preflight", error))?;
@@ -2590,6 +2606,10 @@ mod tests {
             max_tempo: 1.12,
         };
         let first_raw = raw_audio_cache_key(&cue.translated_text, "thuy_dung");
+        assert_eq!(
+            first_raw,
+            raw_audio_cache_key("<i>xin chào</i>", "thuy_dung")
+        );
         let first_processed = processed_audio_cache_key(&first_raw, &cue, &settings);
         cue.translated_text = "chào bạn".into();
         assert_ne!(
