@@ -1,11 +1,49 @@
-export type AppView = "project" | "models" | "diagnostics" | "settings";
+export type AppView = "project" | "ocr" | "models" | "diagnostics" | "settings";
+
+export interface OcrCue extends Cue {
+  confidence: number; segment: number; evidenceSequences: number[];
+  startRangeMs: [number, number]; endRangeMs: [number, number]; warnings: string[]; reviewed: boolean;
+}
+export interface OcrSession {
+  sessionId: string; title: string; url: string; createdAt: number | null;
+  captureState: string; sampleCount: number; state: string;
+  processedSamples: number; totalSamples: number; cueCount: number;
+  reviewedCount: number; warningCount: number; revision: string | null; edited: boolean; error: string | null;
+}
+export interface OcrDocument {
+  sessionId: string; revision: string; baseRevision: string; edited: boolean; newerOcrAvailable: boolean;
+  cues: OcrCue[]; originalCues: OcrCue[]; srt: string; text: string;
+  coverage: { ranges: { startMs: number; endMs: number; segment: number }[];
+    gaps: { afterMs: number; beforeMs: number; reason: string }[]; durationMs: number; wholeEpisodeVerified: boolean };
+}
+export interface OcrCandidate { text: string; confidence: number; variant: string }
+export interface AudioTrialSettings { startMs: number; durationMs: number; voice: string; full?: {allowGaps: boolean; cueVoices?: Record<number,string>} }
+export interface AudioFullPreflight {
+  issues: {code:string;cueIndex:number|null;message:string}[]; warnings:string[];
+  gaps:{startMs:number;endMs:number}[];durationMs:number;knownDurationMs:number;
+  cueCount:number;reviewedCount:number;wavBytes:number;estimatedGrowthBytes:number;
+  projectBytes:number;libraryBytes:number;freeBytes:number;projectQuotaBytes:number;libraryQuotaBytes:number;partial:boolean;
+}
+export interface AudioCueMetric { index: number; startMs: number; endMs: number; rawDurationMs: number; audioDurationMs: number; tempo: number; reused: boolean }
+export interface AudioTrialJob extends LongJobState { settings: AudioTrialSettings; metrics: AudioCueMetric[]; warnings: string[] }
+export interface AudioTrialArtifact { key: string; path: string; wavHash: string; reportHash: string; durationMs: number; settings: AudioTrialSettings; sourceRevision: string; renderedCues: number; partial?:boolean }
+export interface OcrAudioProject {
+  schemaVersion: number; id: string; title: string; url: string; sessionId: string;
+  sourceRevision: string; sourceHash: string; createdAtMs: number; updatedAtMs: number;
+  lastJob: AudioTrialJob | null; lastPreview: AudioTrialArtifact | null; lastFull?: AudioTrialArtifact | null;
+}
+export interface OcrEvidence {
+  imageUrl: string;
+  observation: { sequence: number; timeMs: number; segment: number; uncertaintyMs: number;
+    text: string; confidence: number; manual: boolean; candidates: OcrCandidate[] };
+}
 export type ModelState = "missing" | "partial" | "installed" | "downloading" | "invalid";
 
 export interface ModelInfo {
   id: string;
   name: string;
   description: string;
-  provider: "asr" | "translation" | "tts" | "audio";
+  provider: "asr" | "translation" | "tts" | "audio" | "ocr";
   sizeBytes: number;
   license: string;
   state: ModelState;

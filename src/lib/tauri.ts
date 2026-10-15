@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  OcrSession, OcrDocument, OcrCue, OcrEvidence, OcrCandidate,
+  AudioTrialSettings, AudioTrialJob, OcrAudioProject, AudioFullPreflight,
   Cue,
   DiagnosticEntry,
   DownloadProgress,
@@ -44,6 +46,7 @@ const invokeLogged = async <T,>(command: string, args?: Record<string, unknown>)
 };
 
 const previewModels: ModelInfo[] = [
+  { id: "ocr-vie-fast", name: "OCR Vietnamese Fast", description: "Model vie của Tesseract 5, fallback OCR tiếng Việt local.", provider: "ocr", sizeBytes: 531275, license: "Apache-2.0", state: "missing", installedBytes: 0 },
   { id: "whisper-large-v3-turbo-q5", name: "Whisper large-v3-turbo Q5", description: "Nhận dạng đa ngôn ngữ với Silero VAD, tối ưu cho Apple Silicon.", provider: "asr", sizeBytes: 574926293, license: "MIT", state: "missing", installedBytes: 0 },
   { id: "hy-mt2-7b-q4", name: "Hy-MT2 7B Q4_K_M", description: "Model dịch Nhật/Anh sang Việt, ưu tiên đúng nghĩa và thuật ngữ.", provider: "translation", sizeBytes: 4624648896, license: "Apache-2.0", state: "missing", installedBytes: 0 },
   { id: "qwen3-14b-q4", name: "Qwen3 14B Q4_K_M", description: "Biên tập lời thoại theo nhân vật, bối cảnh và phong cách của Project Editor.", provider: "translation", sizeBytes: 9001752960, license: "Apache-2.0", state: "missing", installedBytes: 0 },
@@ -52,6 +55,27 @@ const previewModels: ModelInfo[] = [
 ];
 
 export const api = {
+  newOcrAudioJobId: () => invokeLogged<string>("new_ocr_audio_job_id"),
+  createOcrAudioProject: (sessionId: string, expectedRevision: string) => invokeLogged<OcrAudioProject>("create_ocr_audio_project", {sessionId,expectedRevision}),
+  loadOcrAudioProject: (projectId: string) => invokeLogged<OcrAudioProject>("load_ocr_audio_project", {projectId}),
+  getOcrAudioJob:(projectId:string)=>invokeLogged<AudioTrialJob|null>("get_ocr_audio_job",{projectId}),
+  renderOcrAudioPreview: (projectId: string, jobId: string, settings: AudioTrialSettings) => invokeLogged<OcrAudioProject>("render_ocr_audio_preview", {projectId,jobId,settings}),
+  cancelOcrAudioPreview: (projectId: string, jobId: string) => invokeLogged<void>("cancel_ocr_audio_preview", {projectId,jobId}),
+  exportOcrAudioPreview: (projectId: string, previewKey: string, path: string) => invokeLogged<void>("export_ocr_audio_preview", {projectId,previewKey,path}),
+  preflightOcrAudioFull: (projectId:string,settings:AudioTrialSettings)=>invokeLogged<AudioFullPreflight>("preflight_ocr_audio_full",{projectId,settings}),
+  exportOcrAudioFull: (projectId:string,artifactKey:string,directory:string)=>invokeLogged<string>("export_ocr_audio_full",{projectId,artifactKey,directory}),
+  openOcrAudioFolder:(projectId:string)=>invokeLogged<void>("open_ocr_audio_folder",{projectId}),
+  listOcrSessions: () => isTauri ? invokeLogged<OcrSession[]>("list_ocr_sessions") : Promise.resolve([]),
+  loadOcrSession: (sessionId: string) => invokeLogged<OcrDocument>("load_ocr_session", { sessionId }),
+  saveOcrReview: (sessionId: string, expectedRevision: string, cues: OcrCue[]) =>
+    invokeLogged<OcrDocument>("save_ocr_review", { sessionId, expectedRevision, cues: cues.map(({startMs,endMs,text,reviewed,evidenceSequences}) => ({startMs,endMs,text,reviewed,evidenceSequences})) }),
+  ocrEvidence: (sessionId: string, sequence: number) => invokeLogged<OcrEvidence>("get_ocr_evidence", { sessionId, sequence }),
+  processOcrSession: (sessionId: string, reprocess = false) => invokeLogged<void>("process_ocr_session", { sessionId, reprocess }),
+  cancelOcrSession: (sessionId: string) => invokeLogged<void>("cancel_ocr_session", { sessionId }),
+  recheckOcrEvidence: (sessionId: string, sequence: number) => invokeLogged<OcrCandidate[]>("recheck_ocr_evidence", { sessionId, sequence }),
+  exportOcrRevision: (sessionId: string, expectedRevision: string, format: "srt" | "txt", path: string) =>
+    invokeLogged<void>("export_ocr_revision", {sessionId,expectedRevision,format,path}),
+  openOcrFolder: (sessionId: string) => invokeLogged<void>("open_ocr_folder", { sessionId }),
   systemStatus: () => isTauri
     ? invokeLogged<SystemStatus>("get_system_status")
     : Promise.resolve({ ffmpeg: true, ffprobe: true, whisperCli: false, llamaCli: false, llamaServer: false, vieneuCli: false, audioCpp: false, appDataDir: "~/Library/Application Support/com.basushi.longtieng" }),

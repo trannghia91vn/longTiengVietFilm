@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+native-host/target/
+*.log
+tests/media/
+tests/results/
+native-host/runtime/

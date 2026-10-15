@@ -11,3 +11,5 @@ src-tauri/engines/whisper-cli
 src-tauri/engines/llama-cli
 src-tauri/engines/llama-server
 src-tauri/engines/*.dylib
+src-tauri/engines/tesseract
+src-tauri/engines/vision-ocr

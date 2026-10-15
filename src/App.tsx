@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { AudioLines, BrainCircuit, FileWarning, FolderKanban, HardDriveDownload, Settings2, ShieldCheck, Trash2 } from "lucide-react";
+import { AudioLines, BrainCircuit, FileWarning, FolderKanban, HardDriveDownload, Info, ScanText, Settings2, ShieldCheck, Trash2 } from "lucide-react";
+import { OcrGuide } from "./components/OcrGuide";
+import { OcrWorkspace } from "./components/OcrWorkspace";
 import { Diagnostics } from "./components/Diagnostics";
 import { ModelManager } from "./components/ModelManager";
 import { ProjectEditor } from "./components/ProjectEditor";
@@ -11,6 +13,7 @@ export default function App() {
   const [system, setSystem] = useState<SystemStatus | null>(null);
   const [modelRevision, setModelRevision] = useState(0);
   const [memory, setMemory] = useState<TranslationMemoryStatus | null>(null);
+  const [showOcrGuide, setShowOcrGuide] = useState(false);
 
   useEffect(() => {
     void api.systemStatus().then(setSystem).catch(() => setSystem(null));
@@ -19,6 +22,7 @@ export default function App() {
 
   const nav = [
     { id: "project" as const, label: "Dự án", icon: FolderKanban },
+    { id: "ocr" as const, label: "OCR", icon: ScanText },
     { id: "models" as const, label: "Model", icon: HardDriveDownload },
     { id: "diagnostics" as const, label: "Nhật ký", icon: FileWarning },
     { id: "settings" as const, label: "Cài đặt", icon: Settings2 },
@@ -42,16 +46,20 @@ export default function App() {
         <header className="topbar">
           <div>
             <p className="eyebrow">STUDIO LOCAL</p>
-            <h1>{view === "project" ? "Dự án mới" : view === "models" ? "Model Manager" : view === "diagnostics" ? "Nhật ký" : "Cài đặt"}</h1>
+            <h1>{view === "project" ? "Dự án mới" : view === "ocr" ? "OCR" : view === "models" ? "Model Manager" : view === "diagnostics" ? "Nhật ký" : "Cài đặt"}</h1>
           </div>
-          <div className="engine-pills">
-            <span className={system?.ffmpeg ? "ready" : "missing"}>FFmpeg</span>
-            <span className={system?.whisperCli ? "ready" : "missing"}>Whisper</span>
-            <span className={system?.llamaServer ? "ready" : "missing"}>AI dịch</span>
+          <div className="topbar-tools">
+            <div className="engine-pills">
+              <span className={system?.ffmpeg ? "ready" : "missing"}>FFmpeg</span>
+              <span className={system?.whisperCli ? "ready" : "missing"}>Whisper</span>
+              <span className={system?.llamaServer ? "ready" : "missing"}>AI dịch</span>
+            </div>
+            <button type="button" className="icon-button ocr-guide-trigger" title="Hướng dẫn OCR" aria-label="Hướng dẫn OCR" aria-haspopup="dialog" aria-controls="ocr-guide" aria-expanded={showOcrGuide} onClick={event => { event.currentTarget.focus(); setShowOcrGuide(true); }}><Info size={17} /></button>
           </div>
         </header>
 
         <div className="content-area">
+          <div hidden={view !== "ocr"}><OcrWorkspace active={view === "ocr"} /></div>
           {view === "project" && <ProjectEditor modelRevision={modelRevision} onOpenModels={() => setView("models")} onOpenDiagnostics={() => setView("diagnostics")} />}
           {view === "models" && <ModelManager onChanged={() => setModelRevision((value) => value + 1)} />}
           {view === "diagnostics" && <Diagnostics />}
@@ -74,6 +82,7 @@ export default function App() {
           )}
         </div>
       </main>
+      {showOcrGuide && <OcrGuide onClose={() => setShowOcrGuide(false)} />}
     </div>
   );
 }

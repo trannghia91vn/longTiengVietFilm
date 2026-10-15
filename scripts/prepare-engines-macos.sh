@@ -129,5 +129,6 @@ if [[ ! -x "$ENGINE_DIR/audiocpp_cli" || ! -f "$ENGINE_DIR/libsea_g2p_rs.dylib" 
   cp "$SEA_G2P_SOURCE/LICENSE" "$ENGINE_DIR/LICENSE.sea-g2p.txt"
 fi
 
-chmod +x "$ENGINE_DIR/ffmpeg" "$ENGINE_DIR/ffprobe" "$ENGINE_DIR/whisper-cli" "$ENGINE_DIR/llama-cli" "$ENGINE_DIR/llama-server" "$ENGINE_DIR/audiocpp_cli" "$ENGINE_DIR/libsea_g2p_rs.dylib"
+node "$ROOT_DIR/browser-extension/scripts/prepare-ocr.mjs"
+chmod +x "$ENGINE_DIR/ffmpeg" "$ENGINE_DIR/ffprobe" "$ENGINE_DIR/whisper-cli" "$ENGINE_DIR/llama-cli" "$ENGINE_DIR/llama-server" "$ENGINE_DIR/audiocpp_cli" "$ENGINE_DIR/libsea_g2p_rs.dylib" "$ENGINE_DIR/tesseract"
 echo "Bundled engines are ready in $ENGINE_DIR"

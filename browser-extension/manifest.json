@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Long Tieng - Thu subtitle",
+  "version": "0.3.4",
+  "description": "Thu vung subtitle, OCR local va luu SRT kem timestamp vao app data.",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "tabCapture", "scripting", "offscreen", "storage", "nativeMessaging"],
+  "optional_permissions": ["webNavigation"],
+  "host_permissions": ["https://animevietsub.nl/*", "https://storage.googleapiscdn.com/*"],
+  "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "background": { "service_worker": "service-worker.js", "type": "module" },
+  "action": { "default_title": "Long Tieng: chon vung subtitle" },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'self'" }
+}

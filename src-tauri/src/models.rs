@@ -128,6 +128,19 @@ fn emit_verification_progress(
 fn specs() -> Vec<ModelSpec> {
     vec![
         ModelSpec {
+            id: "ocr-vie-fast",
+            name: "OCR Vietnamese Fast",
+            description: "Model vie của Tesseract 5 cho phụ đề Việt hardsub; kết quả cần kiểm tra dấu và tên riêng.",
+            provider: "ocr",
+            license: "Apache-2.0",
+            files: vec![ModelFile {
+                relative_path: "vie.traineddata",
+                url: "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/vie.traineddata",
+                size: 531_275,
+                sha256: Some("79df64caf7bcfb2a27df5042ecb6121e196eada34da774956995747636d5bfa1"),
+            }],
+        },
+        ModelSpec {
             id: "whisper-large-v3-turbo-q5",
             name: "Whisper large-v3-turbo Q5",
             description: "Nhận dạng đa ngôn ngữ với Silero VAD, tối ưu cho Apple Silicon.",

@@ -18,6 +18,12 @@ use tokio::time::sleep;
 use uuid::Uuid;
 
 static CANCEL_REQUESTED: AtomicBool = AtomicBool::new(false);
+static MEDIA_JOB_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+pub(crate) fn media_job_guard() -> Result<tokio::sync::MutexGuard<'static, ()>, String> {
+    MEDIA_JOB_GATE
+        .try_lock()
+        .map_err(|_| "Một tác vụ âm thanh/video đang chạy; hãy đợi hoặc hủy tác vụ đó.".into())
+}
 const CURRENT_TTS_CACHE_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -551,7 +557,7 @@ fn refresh_job_timing(job: &mut LongJobState) {
 
 fn emit_long_job(app: &AppHandle, job: &LongJobState) {
     let _ = app.emit(
-        "project-progress",
+        job_progress_event(&job.kind),
         ProjectProgress {
             job_id: Some(job.id.clone()),
             kind: Some(job.kind.clone()),
@@ -569,6 +575,13 @@ fn emit_long_job(app: &AppHandle, job: &LongJobState) {
             eta_seconds: job.eta_seconds,
         },
     );
+}
+fn job_progress_event(kind: &str) -> &'static str {
+    if matches!(kind, "ocr-audio-preview" | "ocr-audio-full") {
+        "ocr-audio-engine-progress"
+    } else {
+        "project-progress"
+    }
 }
 
 fn start_long_job(kind: &str, total: usize, message: &str) -> LongJobState {
@@ -1209,7 +1222,7 @@ pub async fn translate(app: &AppHandle, project_id: &str) -> Result<DubbingProje
     translate_inner(app, project_id, None).await
 }
 
-fn raw_audio_cache_key(text: &str, voice: &str) -> String {
+pub(crate) fn raw_audio_cache_key(text: &str, voice: &str) -> String {
     let spoken_text = pipeline::speech_text(text);
     let mut digest = Sha256::new();
     digest.update(b"vieneu-v3-turbo-q8-sea-g2p-raw-v2");
@@ -1298,7 +1311,28 @@ async fn run_managed_command<F>(
     label: &str,
     stall_timeout: Duration,
     hard_timeout: Duration,
+    on_event: F,
+) -> Result<ManagedCommandOutput, ManagedCommandError>
+where
+    F: FnMut(ManagedEvent),
+{
+    run_managed_command_with_cancel(
+        command,
+        label,
+        stall_timeout,
+        hard_timeout,
+        on_event,
+        &CANCEL_REQUESTED,
+    )
+    .await
+}
+async fn run_managed_command_with_cancel<F>(
+    command: &mut Command,
+    label: &str,
+    stall_timeout: Duration,
+    hard_timeout: Duration,
     mut on_event: F,
+    cancellation: &AtomicBool,
 ) -> Result<ManagedCommandOutput, ManagedCommandError>
 where
     F: FnMut(ManagedEvent),
@@ -1377,7 +1411,7 @@ where
         }
 
         let elapsed = started.elapsed();
-        let cancelled = CANCEL_REQUESTED.load(Ordering::Relaxed);
+        let cancelled = cancellation.load(Ordering::Relaxed);
         let hard_expired = elapsed >= hard_timeout;
         let stalled = last_output.elapsed() >= stall_timeout;
         if cancelled || hard_expired || stalled {
@@ -1417,7 +1451,7 @@ where
     }
 }
 
-fn wav_duration_ms(path: &Path) -> Result<i64, String> {
+pub(crate) fn wav_duration_ms(path: &Path) -> Result<i64, String> {
     let reader = hound::WavReader::open(path)
         .map_err(|error| format!("WAV không hợp lệ {}: {error}", path.display()))?;
     let rate = reader.spec().sample_rate.max(1) as f64;
@@ -1429,18 +1463,18 @@ fn valid_wav(path: &Path) -> bool {
 }
 
 #[derive(Clone, Debug)]
-struct TtsTask {
-    cue_id: String,
-    cue_index: usize,
-    text: String,
-    voice: String,
-    raw_key: String,
-    raw_path: PathBuf,
-    processed_path: PathBuf,
-    target_duration_ms: i64,
-    speed: f64,
-    volume: f64,
-    had_markup: bool,
+pub(crate) struct TtsTask {
+    pub cue_id: String,
+    pub cue_index: usize,
+    pub text: String,
+    pub voice: String,
+    pub raw_key: String,
+    pub raw_path: PathBuf,
+    pub processed_path: PathBuf,
+    pub target_duration_ms: i64,
+    pub speed: f64,
+    pub volume: f64,
+    pub had_markup: bool,
 }
 
 #[derive(Deserialize)]
@@ -1509,12 +1543,19 @@ fn fail_job(
 }
 
 async fn detect_audio_backend(executable: &Path) -> Result<String, ManagedCommandError> {
-    let output = run_managed_command(
+    detect_audio_backend_with_cancel(executable, &CANCEL_REQUESTED).await
+}
+async fn detect_audio_backend_with_cancel(
+    executable: &Path,
+    cancellation: &AtomicBool,
+) -> Result<String, ManagedCommandError> {
+    let output = run_managed_command_with_cancel(
         Command::new(executable).arg("--version"),
         "kiểm tra audio.cpp",
         Duration::from_secs(10),
         Duration::from_secs(10),
         |_| {},
+        cancellation,
     )
     .await?;
     let version = format!(
@@ -1531,6 +1572,14 @@ async fn detect_audio_backend(executable: &Path) -> Result<String, ManagedComman
         }
         .into(),
     )
+}
+pub(crate) async fn audio_backend(
+    executable: &Path,
+    cancellation: &AtomicBool,
+) -> Result<String, String> {
+    detect_audio_backend_with_cancel(executable, cancellation)
+        .await
+        .map_err(|e| e.display())
 }
 
 fn ensure_writable(directory: &Path) -> Result<(), String> {
@@ -1555,6 +1604,7 @@ pub async fn preview_voice(app: &AppHandle, voice: &str) -> Result<String, Strin
     ) {
         return Err("Voice preset không hợp lệ.".into());
     }
+    let _media_guard = media_job_guard()?;
     begin_job();
     let cache = app
         .path()
@@ -1728,6 +1778,52 @@ async fn generate_tts_batch(
     tasks: &[TtsTask],
     workspace: &Path,
 ) -> Result<(), JobError> {
+    generate_tts_batch_scoped(
+        TtsBatchContext {
+            app,
+            executable,
+            model,
+            g2p_library,
+            g2p_dictionary,
+            backend,
+            voice,
+            batch_number,
+            cancellation: &CANCEL_REQUESTED,
+        },
+        job,
+        tasks,
+        workspace,
+    )
+    .await
+}
+pub(crate) struct TtsBatchContext<'a> {
+    pub app: &'a AppHandle,
+    pub executable: &'a Path,
+    pub model: &'a Path,
+    pub g2p_library: &'a Path,
+    pub g2p_dictionary: &'a Path,
+    pub backend: &'a str,
+    pub voice: &'a str,
+    pub batch_number: usize,
+    pub cancellation: &'a AtomicBool,
+}
+pub(crate) async fn generate_tts_batch_scoped(
+    context: TtsBatchContext<'_>,
+    job: &mut LongJobState,
+    tasks: &[TtsTask],
+    workspace: &Path,
+) -> Result<(), JobError> {
+    let TtsBatchContext {
+        app,
+        executable,
+        model,
+        g2p_library,
+        g2p_dictionary,
+        backend,
+        voice,
+        batch_number,
+        cancellation,
+    } = context;
     let input = workspace.join("input");
     let output = workspace.join("output");
     std::fs::create_dir_all(&input).map_err(|error| job_error("tts-batch", error.to_string()))?;
@@ -1803,7 +1899,8 @@ async fn generate_tts_batch(
     let reused = job.reused;
     let message = job.message.clone();
     let job_started_at = job.started_at_ms;
-    run_managed_command(
+    let event_name = job_progress_event(&kind);
+    run_managed_command_with_cancel(
         &mut command,
         "VieNeu-TTS batch",
         Duration::from_secs(90),
@@ -1816,7 +1913,7 @@ async fn generate_tts_batch(
                     processed as f64 / total as f64 * 100.0
                 };
                 let _ = app_for_events.emit(
-                    "project-progress",
+                    event_name,
                     ProjectProgress {
                         job_id: Some(job_id.clone()),
                         kind: Some(kind.clone()),
@@ -1836,6 +1933,7 @@ async fn generate_tts_batch(
                 );
             }
         },
+        cancellation,
     )
     .await
     .map_err(|error| {
@@ -1888,6 +1986,14 @@ async fn normalize_task(
     task: TtsTask,
     settings: AudioSettings,
 ) -> Result<(TtsTask, i64, bool), JobError> {
+    normalize_task_scoped(ffmpeg, task, settings, &CANCEL_REQUESTED).await
+}
+pub(crate) async fn normalize_task_scoped(
+    ffmpeg: PathBuf,
+    task: TtsTask,
+    settings: AudioSettings,
+    cancellation: &AtomicBool,
+) -> Result<(TtsTask, i64, bool), JobError> {
     let source_duration_ms =
         wav_duration_ms(&task.raw_path).map_err(|error| job_error("normalizing", error))?;
     let source_duration = source_duration_ms as f64 / 1_000.0;
@@ -1915,12 +2021,13 @@ async fn normalize_task(
             "pcm_s16le",
         ])
         .arg(&temporary);
-    run_managed_command(
+    run_managed_command_with_cancel(
         &mut command,
         "FFmpeg chuẩn hóa cue",
         Duration::from_secs(30),
         Duration::from_secs(2 * 60),
         |_| {},
+        cancellation,
     )
     .await
     .map_err(|error| {
@@ -1945,6 +2052,7 @@ pub async fn synthesize(
     app: &AppHandle,
     request: SynthesizeRequest,
 ) -> Result<SynthesizeResult, String> {
+    let _media_guard = media_job_guard()?;
     begin_job();
     let mut project = load_inner(app, &request.project_id)?;
     let eligible = project
@@ -2365,6 +2473,7 @@ pub async fn render(
     output_path: Option<&str>,
     max_seconds: Option<u64>,
 ) -> Result<RenderResult, String> {
+    let _media_guard = media_job_guard()?;
     begin_job();
     let mut project = load_inner(app, project_id)?;
     let mut job = start_long_job(
@@ -2576,6 +2685,33 @@ pub async fn render(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn audio_job_gate_and_events_do_not_leak_to_video_workflow() {
+        let guard = media_job_guard().unwrap();
+        assert!(media_job_guard().is_err());
+        drop(guard);
+        assert!(media_job_guard().is_ok());
+        assert_eq!(
+            job_progress_event("ocr-audio-preview"),
+            "ocr-audio-engine-progress"
+        );
+        assert_eq!(job_progress_event("synthesize"), "project-progress");
+    }
+    #[tokio::test]
+    async fn managed_process_accepts_scoped_cancel() {
+        let cancellation = AtomicBool::new(true);
+        let error = run_managed_command_with_cancel(
+            Command::new("sh").args(["-c", "exec sleep 10"]),
+            "scoped audio",
+            Duration::from_secs(5),
+            Duration::from_secs(20),
+            |_| {},
+            &cancellation,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "cancelled");
+    }
 
     #[test]
     fn cache_changes_with_text_voice_and_parameters() {

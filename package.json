@@ -4,10 +4,24 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "release:local": "node scripts/build-local.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "extension:build": "tsc -p browser-extension/tsconfig.json && node browser-extension/scripts/build.mjs",
+    "extension:test": "node browser-extension/scripts/test.mjs",
+    "extension:dev": "vite --config browser-extension/vite.config.ts",
+    "native:build": "node browser-extension/scripts/native-host.mjs build",
+    "native:test": "node browser-extension/scripts/native-host.mjs test",
+    "native:register": "node browser-extension/scripts/native-host.mjs register",
+    "ocr:prepare": "node browser-extension/scripts/prepare-ocr.mjs",
+    "ocr:process": "node browser-extension/scripts/native-host.mjs process",
+    "ocr:integration": "node browser-extension/scripts/test-ocr.mjs",
+    "ocr:smart:replay": "node browser-extension/scripts/smart-replay.mjs",
+    "ocr:editor:test": "node --test tests/ocr-editor.test.mjs",
+    "ocr:audio:test": "node --test tests/audio-preview.test.mjs",
+    "ocr:audio:qa": "node tests/prepare-audio-qa.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",
@@ -19,9 +33,12 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.0",
+    "@types/chrome": "^0.3.5",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "fake-indexeddb": "^6.2.5",
+    "fflate": "^0.8.3",
     "typescript": "~5.7.2",
     "vite": "^6.0.7"
   }

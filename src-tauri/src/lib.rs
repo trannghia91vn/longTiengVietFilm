@@ -1,5 +1,7 @@
+mod audio_project;
 mod diagnostics;
 mod models;
+mod ocr;
 mod pipeline;
 mod project;
 mod srt;
@@ -244,6 +246,25 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
+            audio_project::new_ocr_audio_job_id,
+            audio_project::create_ocr_audio_project,
+            audio_project::load_ocr_audio_project,
+            audio_project::get_ocr_audio_job,
+            audio_project::render_ocr_audio_preview,
+            audio_project::cancel_ocr_audio_preview,
+            audio_project::export_ocr_audio_preview,
+            audio_project::preflight_ocr_audio_full,
+            audio_project::export_ocr_audio_full,
+            audio_project::open_ocr_audio_folder,
+            ocr::list_ocr_sessions,
+            ocr::load_ocr_session,
+            ocr::save_ocr_review,
+            ocr::get_ocr_evidence,
+            ocr::process_ocr_session,
+            ocr::cancel_ocr_session,
+            ocr::recheck_ocr_evidence,
+            ocr::export_ocr_revision,
+            ocr::open_ocr_folder,
             get_diagnostics,
             record_diagnostic,
             clear_diagnostics,
